@@ -10,18 +10,24 @@ end
 
 def smart_add!(schools, school)
     name = school[:name]
-    school.delete(:name)
-    if schools.include? name
-        schools[name][:descriptions].push(school)
+    unless name.nil?
+        school.delete(:name)
+        if schools.include? name
+            schools[name][:descriptions].push(school)
+        else
+            schools[name] = {
+                descriptions: [school]
+            }
+        end
     else
-        schools[name] = {
-            descriptions: [school]
-        }
+        puts "Nil detected!"
     end
 end
 
 countries = JSON.parse(File.read('countries.json'))
 countries = countries['values']
+US = countries.select { |country| country[1] == 'United States' }
+states = JSON.parse(File.read('states.json'))
 
 # Wikipedia entries
 page = Nokogiri::HTML(open('wiki_frauds.html'))
@@ -30,10 +36,11 @@ school_els.each do |el|
     description = clean(el.text)
     a = el.css('a')
     school = {
+        source: 'Wikipedia'
     }
     if a.size > 0
         name = clean(a.text)
-        href = a.attr('href')
+        href = a.attr('href').value
         school[:name] = name
         school[:text] = description
         title = a.attr('title')
@@ -50,29 +57,48 @@ school_els.each do |el|
         end
     end
 
-    school[:source] = 'Wikipedia'
     if !school[:name].nil? && school[:name].strip().size > 0
-        name = school[:name]
-        school.delete(:name)
-        schools[name] = {
-            descriptions: [school]
-        }
+        smart_add!(schools, school)
     end
 end
 
 # Glen wood diploma mills
+glen_wood = 'Bogus University Directory TACRAO 2010'
 CSV.foreach('glen_wood_diploma_mills.csv', col_sep: '|') do |row|
+    description = row[1]
     school = {
-        text: row[1],
-        source: 'Glen Wood'
+        text: description,
+        source: glen_wood,
+        name: row[0]
     }
-    if schools.include? row[0]
-        schools[row[0]][:descriptions].push(school)
-    else
-        schools[row[0]] = {
-            descriptions: [school]
-        }
+
+    # check countries
+    countries.each do |c|
+        if description.include? c[1]
+            school[:country] = c
+        end
     end
+
+    # check States
+    states.each do |state|
+        if description.include?(state[0]) || description.include?(state[1])
+            school[:country] = US # hardcoded to US
+        end
+    end
+
+    smart_add!(schools, school)
+end
+
+# Glen wood closed diploma mills
+CSV.foreach('glen_wood_closed_diploma_mills.csv', col_sep: '|') do |row|
+    description = row[1]
+    school = {
+        text: description,
+        source: glen_wood,
+        name: row[0]
+    }
+
+    smart_add!(schools, school)
 end
 
 # thecb
@@ -89,7 +115,7 @@ school_els.each do |el, index|
             name: clean(tds[0].text),
             location: clean(tds[1].text),
             text: clean(tds[2].text),
-            source: 'THECB'
+            source: 'Texas Higher Education Coordinating Board'
         }
 
         countries.each do |c|
@@ -102,8 +128,30 @@ school_els.each do |el, index|
     end
 end
 
-schools.each do |row|
-    p "#{row[0].to_s.ljust(50)} #{row[1][:descriptions].length.to_s.ljust(4)}"
+# geteducated_com
+CSV.foreach('geteducated_com.csv') do |row|
+    school = {
+        source: 'geteducated.com',
+        name: row[0]
+    }
+
+    # is it in the US?
+    if row.length > 1
+        row[1...row.length].each do |item|
+            states.each do |state|
+                if item == state[0]
+                    school[:country] = US # hardcoded to US
+                end
+            end
+        end
+    end
+
+    smart_add!(schools, school)
+end
+
+schools.keys.to_a.sort.each do |name|
+    descriptions = schools[name]
+    p "#{name.ljust(50)} #{descriptions.length.to_s.ljust(4)}"
 end
 p "Number of schools #{schools.length}"
 #
