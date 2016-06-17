@@ -5,7 +5,7 @@ require 'json'
 schools = {}
 
 def clean(txt)
-    txt.gsub(/\[\d+\]/,'').strip
+    txt.gsub(/\[\d+\]/,'').gsub(/(\(page does not exist\))|(\(disambiguation\))|(\(online\))/, '').strip
 end
 
 def smart_add!(schools, school)
@@ -34,17 +34,17 @@ page = Nokogiri::HTML(open('wiki_frauds.html'))
 school_els = page.css('#mw-content-text > ul > li')
 school_els.each do |el|
     description = clean(el.text)
-    a = el.css('a')
+    a = el.css('a').first
     school = {
         source: 'Wikipedia'
     }
-    if a.size > 0
+    if !a.nil?
         name = clean(a.text)
-        href = a.attr('href').value
+        href = a.attr('href')
         school[:name] = name
         school[:text] = description
         title = a.attr('title')
-        if !title.nil? && !title.text.include?('page does not exist')
+        if !title.nil? && !title.include?('page does not exist')
             school[:href] = href
         end
     else
@@ -128,30 +128,31 @@ school_els.each do |el, index|
     end
 end
 
-# geteducated_com
-CSV.foreach('geteducated_com.csv') do |row|
-    school = {
-        source: 'geteducated.com',
-        name: row[0]
-    }
-
-    # is it in the US?
-    if row.length > 1
-        row[1...row.length].each do |item|
-            states.each do |state|
-                if item == state[0]
-                    school[:country] = US # hardcoded to US
-                end
-            end
-        end
-    end
-
-    smart_add!(schools, school)
-end
+# # geteducated_com
+# CSV.foreach('geteducated_com.csv', col_sep: '|') do |row|
+#     school = {
+#         source: 'geteducated.com',
+#         name: row[0]
+#     }
+#
+#     # is it in the US?
+#     if row.length > 1
+#         row[1...row.length].each do |item|
+#             states.each do |state|
+#                 if item == state[0]
+#                     school[:country] = US # hardcoded to US
+#                 end
+#             end
+#         end
+#     end
+#
+#     smart_add!(schools, school)
+# end
 
 schools.keys.to_a.sort.each do |name|
-    descriptions = schools[name]
-    p "#{name.ljust(50)} #{descriptions.length.to_s.ljust(4)}"
+    descriptions = schools[name][:descriptions]
+    sources = descriptions.inject('') { |acc, val| val[:source] + ', ' + acc}
+    p "#{name.ljust(50)} #{descriptions.length.to_s.ljust(4)} #{sources}"
 end
 p "Number of schools #{schools.length}"
 #
