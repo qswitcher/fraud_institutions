@@ -8,6 +8,15 @@ def clean(txt)
     txt.gsub(/\[\d+\]/,'').gsub(/(\(page does not exist\))|(\(disambiguation\))|(\(online\))/, '').strip
 end
 
+def colorize(text, color_code)
+  "\033[#{color_code}m#{text}\033[0m"
+end
+
+def red(text); colorize(text, 31); end
+def green(text); colorize(text, 32); end
+def blue(text); colorize(text, 34); end
+
+
 def smart_add!(schools, school)
     name = school[:name]
     unless name.nil?
@@ -26,7 +35,7 @@ end
 
 countries = JSON.parse(File.read('countries.json'))
 countries = countries['values']
-US = countries.select { |country| country[1] == 'United States' }
+US = (countries.select { |country| country[1] == 'United States' }).first
 states = JSON.parse(File.read('states.json'))
 
 # Wikipedia entries
@@ -67,7 +76,7 @@ glen_wood = 'Bogus University Directory TACRAO 2010'
 CSV.foreach('glen_wood_diploma_mills.csv', col_sep: '|') do |row|
     description = row[1]
     school = {
-        text: description,
+        location: description,
         source: glen_wood,
         name: row[0]
     }
@@ -128,36 +137,57 @@ school_els.each do |el, index|
     end
 end
 
-# # geteducated_com
-# CSV.foreach('geteducated_com.csv', col_sep: '|') do |row|
-#     school = {
-#         source: 'geteducated.com',
-#         name: row[0]
-#     }
-#
-#     # is it in the US?
-#     if row.length > 1
-#         row[1...row.length].each do |item|
-#             states.each do |state|
-#                 if item == state[0]
-#                     school[:country] = US # hardcoded to US
-#                 end
-#             end
+# GRADE institutions
+institutions = JSON.parse(File.read('grade_institutions.json'))['values']
+institutions = institutions.sort { |left, right| left[1] <=> right[1] }
+grade_institutions = {}
+institutions.each do |institution|
+    grade_institutions[institution[1]] = institution
+end
+
+schools_merged = schools.merge(grade_institutions) do |key, oldvalue, newvalue|
+    oldvalue[:grade_institution] = newvalue
+    oldvalue
+end
+
+# schools_merged.keys.to_a.sort.each do |name|
+#     #descriptions = schools[name][:descriptions]
+#     #sources = descriptions.inject('') { |acc, val| val[:source] + ', ' + acc}
+#     #p "#{name.ljust(50)} #{descriptions.length.to_s.ljust(4)} #{sources}"
+#     school = schools_merged[name]
+#     if school.is_a?(Hash)
+#         # it's an imported school
+#         if school[:grade_institution].nil?
+#             # it's an unmatched school
+#             puts green(name)
+#         else
+#             puts red(name)
 #         end
+#     else
+#         puts blue(name)
 #     end
-#
-#     smart_add!(schools, school)
 # end
 
-schools.keys.to_a.sort.each do |name|
-    descriptions = schools[name][:descriptions]
-    sources = descriptions.inject('') { |acc, val| val[:source] + ', ' + acc}
-    p "#{name.ljust(50)} #{descriptions.length.to_s.ljust(4)} #{sources}"
-end
-p "Number of schools #{schools.length}"
-#
-# CSV.open('fraud_out.csv', 'w') do |csv|
-#     schools.each do |school|
-#         csv << [school[:name], school[:href], school[:country].nil? ? nil : school[:country][0],  school[:country].nil? ? nil : school[:country][1], school[:description]]
-#     end
+
+
+puts "#{schools.length} total mills"
+puts "#{(schools.clone.keep_if { |key, value| value[:grade_institution].nil?}).length} new schools"
+puts "#{(schools.clone.keep_if { |key, value| !value[:grade_institution].nil?}).length} existing schools"
+
+# (schools.clone.keep_if { |key, value| !value[:grade_institution].nil?}).each do |key, value|
+#     puts key
 # end
+
+
+schools.keys.to_a.sort.each do |school_name|
+    value = schools[school_name]
+    puts blue(school_name)
+    value[:descriptions].each do |source|
+        puts red("  #{source[:source]}")
+        source.each do |key, value|
+            if key != :source
+                puts green("    #{key.to_s.ljust(10)} #{value}")
+            end
+        end
+    end
+end
